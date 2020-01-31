@@ -80,7 +80,7 @@
 		"tslint": "~5.17.0",
 		"typedoc": "^0.15.0",
 		"typescript": "^3.5.3",
-		"webpack-dev-server": "^3.8.0"
+		"webpack-dev-server": "^3.10.2"
 	},
 	"config": {
 		"commitizen": {

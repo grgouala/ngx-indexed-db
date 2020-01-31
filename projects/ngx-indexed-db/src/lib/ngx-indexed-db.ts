@@ -1,3 +1,5 @@
+import { DBConfig } from './ngx-indexed-db.meta';
+
 export interface ObjectStoreMeta {
 	store: string;
 	storeConfig: { keyPath: string; autoIncrement: boolean; [key: string]: any };
@@ -25,7 +27,7 @@ export interface RequestEvent<T> extends Event {
 const indexedDB: IDBFactory =
 	window.indexedDB || (<any>window).mozIndexedDB || (<any>window).webkitIndexedDB || (<any>window).msIndexedDB;
 
-export function openDatabase(dbName: string, version: number, upgradeCallback?: Function) {
+export function openDatabase(dbName: string, version: number, config?: DBConfig) {
 	return new Promise<IDBDatabase>((resolve, reject) => {
 		const request = indexedDB.open(dbName, version);
 		let db: IDBDatabase;
@@ -36,10 +38,11 @@ export function openDatabase(dbName: string, version: number, upgradeCallback?: 
 		request.onerror = (event: Event) => {
 			reject(`IndexedDB error: ${request.error}`);
 		};
-		if (typeof upgradeCallback === 'function') {
-			request.onupgradeneeded = (event: Event) => {
+		if (config !== undefined && config !== null) {
+			request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
 				console.log('checkout');
-				upgradeCallback(event, db);
+				const database: IDBDatabase = (event.target as any).result;
+				Upgrade(event, database, config);
 			};
 		}
 	});
@@ -82,6 +85,30 @@ export function CreateObjectStore(
 	request.onsuccess = function(e: any) {
 		e.target.result.close();
 	};
+}
+
+export function Upgrade(event: IDBVersionChangeEvent, database: IDBDatabase, config: DBConfig) {
+	const request: IDBOpenDBRequest = indexedDB.open(config.name, config.version);
+
+	config.objectStoresMeta.forEach((storeSchema: ObjectStoreMeta) => {
+		if (!database.objectStoreNames.contains(storeSchema.store)) {
+			const objectStore = database.createObjectStore(storeSchema.store, storeSchema.storeConfig);
+			storeSchema.storeSchema.forEach((schema: ObjectStoreSchema) => {
+				objectStore.createIndex(schema.name, schema.keypath, schema.options);
+			});
+		}
+	});
+
+	const storeMigrations = config.migrationFactory && config.migrationFactory();
+	if (storeMigrations) {
+		Object.keys(storeMigrations)
+			.map(k => parseInt(k, 10))
+			.filter(v => v > event.oldVersion)
+			.sort((a, b) => a - b)
+			.forEach(v => {
+				storeMigrations[v](database, request.transaction);
+			});
+	}
 }
 
 export enum DBMode {
